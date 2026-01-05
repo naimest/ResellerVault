@@ -12,6 +12,7 @@ export enum ServiceName {
   PRIME_VIDEO = 'Prime Video',
   YOUTUBE_PREMIUM = 'YouTube Premium',
   VPN = 'VPN Service',
+  ANGHAMI = 'Anghami',
   OTHER = 'Other'
 }
 
@@ -28,6 +29,7 @@ export interface Slot {
   customerName: string; // Fallback or display name
   isOccupied: boolean;
   notes?: string;
+  expirationDate?: string; // Expiration date for this specific slot assignment
 }
 
 export interface Account {
