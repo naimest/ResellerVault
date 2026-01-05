@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Bell, Clock } from 'lucide-react';
 import { subscribeToTelegramConfig, saveTelegramConfig } from '../services/dataService';
-import { sendExpirationAlert } from '../services/telegramService';
 import { TelegramConfig } from '../types';
 
 interface Props {
