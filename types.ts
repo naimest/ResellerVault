@@ -30,6 +30,7 @@ export interface Slot {
   isOccupied: boolean;
   notes?: string;
   expirationDate?: string; // Expiration date for this specific slot assignment
+  profileName?: string; // Optional: The specific profile used (e.g., "Kids", "Profile 1")
 }
 
 export interface Account {
