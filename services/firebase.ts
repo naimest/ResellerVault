@@ -2,29 +2,16 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-// Declare global types for Vite environment variables to fix missing type definition errors
-declare global {
-  interface ImportMetaEnv {
-    readonly VITE_FIREBASE_API_KEY: string;
-    readonly VITE_FIREBASE_AUTH_DOMAIN: string;
-    readonly VITE_FIREBASE_PROJECT_ID: string;
-    readonly VITE_FIREBASE_STORAGE_BUCKET: string;
-    readonly VITE_FIREBASE_MESSAGING_SENDER_ID: string;
-    readonly VITE_FIREBASE_APP_ID: string;
-  }
-
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-}
+// Fallback to empty object if import.meta.env is undefined to prevent runtime crashes
+const env = (import.meta as any).env || {};
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: env.VITE_FIREBASE_API_KEY,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
