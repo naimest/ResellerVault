@@ -45,7 +45,8 @@ export const saveAccount = async (accountData: Partial<Account>): Promise<void> 
         id: Math.random().toString(36).substr(2, 9),
         customerId: null,
         customerName: '',
-        isOccupied: false
+        isOccupied: false,
+        profileName: ''
       });
     }
   } else {
@@ -53,7 +54,8 @@ export const saveAccount = async (accountData: Partial<Account>): Promise<void> 
       id: Math.random().toString(36).substr(2, 9),
       customerId: null,
       customerName: '',
-      isOccupied: false
+      isOccupied: false,
+      profileName: ''
     });
   }
 
@@ -86,7 +88,8 @@ export const updateSlot = async (
   slotId: string, 
   customerId: string | null, 
   customerName: string,
-  expirationDate?: string
+  expirationDate?: string,
+  profileName?: string
 ): Promise<void> => {
   const accountRef = doc(db, ACCOUNTS_COLL, accountId);
   const snapshot = await getDoc(accountRef);
@@ -100,7 +103,8 @@ export const updateSlot = async (
           customerId, 
           customerName, 
           isOccupied: !!customerName,
-          expirationDate: expirationDate || '' 
+          expirationDate: expirationDate || '',
+          profileName: profileName || ''
         };
       }
       return slot;
