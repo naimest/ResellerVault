@@ -81,7 +81,13 @@ export const deleteAccount = async (id: string): Promise<void> => {
   await deleteDoc(doc(db, ACCOUNTS_COLL, id));
 };
 
-export const updateSlot = async (accountId: string, slotId: string, customerId: string | null, customerName: string): Promise<void> => {
+export const updateSlot = async (
+  accountId: string, 
+  slotId: string, 
+  customerId: string | null, 
+  customerName: string,
+  expirationDate?: string
+): Promise<void> => {
   const accountRef = doc(db, ACCOUNTS_COLL, accountId);
   const snapshot = await getDoc(accountRef);
   
@@ -89,7 +95,13 @@ export const updateSlot = async (accountId: string, slotId: string, customerId: 
     const account = snapshot.data() as Account;
     const updatedSlots = account.slots.map(slot => {
       if (slot.id === slotId) {
-        return { ...slot, customerId, customerName, isOccupied: !!customerName };
+        return { 
+          ...slot, 
+          customerId, 
+          customerName, 
+          isOccupied: !!customerName,
+          expirationDate: expirationDate || '' 
+        };
       }
       return slot;
     });
