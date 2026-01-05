@@ -7,7 +7,8 @@ import {
   deleteDoc, 
   onSnapshot, 
   setDoc, 
-  getDoc 
+  getDoc,
+  FirestoreError
 } from 'firebase/firestore';
 import { Account, AccountType, Slot, Customer, TelegramConfig } from '../types';
 
@@ -18,11 +19,21 @@ const SETTINGS_DOC = 'telegram';
 
 // --- ACCOUNTS ---
 
-export const subscribeToAccounts = (callback: (accounts: Account[]) => void) => {
-  return onSnapshot(collection(db, ACCOUNTS_COLL), (snapshot) => {
-    const accounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
-    callback(accounts);
-  });
+export const subscribeToAccounts = (
+  callback: (accounts: Account[]) => void,
+  onError?: (error: FirestoreError) => void
+) => {
+  return onSnapshot(
+    collection(db, ACCOUNTS_COLL), 
+    (snapshot) => {
+      const accounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
+      callback(accounts);
+    },
+    (error) => {
+      if (onError) onError(error);
+      else console.error("Accounts Listener Error:", error);
+    }
+  );
 };
 
 export const saveAccount = async (accountData: Partial<Account>): Promise<void> => {
@@ -62,13 +73,6 @@ export const saveAccount = async (accountData: Partial<Account>): Promise<void> 
 
 export const updateAccount = async (account: Account): Promise<void> => {
   const accountRef = doc(db, ACCOUNTS_COLL, account.id);
-  
-  // Logic to adjust slots if maxSlots changed
-  // Note: For simplicity in this async version, we rely on the passed account object 
-  // having the correct slots, or we assume the UI handled the array resizing before passing it.
-  // However, to be safe, we perform a basic check here if needed, but let's trust the UI/Modal logic for now.
-  
-  // Ensure we don't send the ID as part of the data payload
   const { id, ...data } = account;
   await updateDoc(accountRef, data);
 };
@@ -96,11 +100,21 @@ export const updateSlot = async (accountId: string, slotId: string, customerId: 
 
 // --- CUSTOMERS ---
 
-export const subscribeToCustomers = (callback: (customers: Customer[]) => void) => {
-  return onSnapshot(collection(db, CUSTOMERS_COLL), (snapshot) => {
-    const customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
-    callback(customers);
-  });
+export const subscribeToCustomers = (
+  callback: (customers: Customer[]) => void,
+  onError?: (error: FirestoreError) => void
+) => {
+  return onSnapshot(
+    collection(db, CUSTOMERS_COLL), 
+    (snapshot) => {
+      const customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
+      callback(customers);
+    },
+    (error) => {
+      if (onError) onError(error);
+      else console.error("Customers Listener Error:", error);
+    }
+  );
 };
 
 export const saveCustomer = async (customer: Omit<Customer, 'id'>): Promise<void> => {
@@ -121,14 +135,24 @@ const DEFAULT_TELEGRAM: TelegramConfig = {
   enabled: false
 };
 
-export const subscribeToTelegramConfig = (callback: (config: TelegramConfig) => void) => {
-  return onSnapshot(doc(db, SETTINGS_COLL, SETTINGS_DOC), (doc) => {
-    if (doc.exists()) {
-      callback({ ...DEFAULT_TELEGRAM, ...doc.data() } as TelegramConfig);
-    } else {
-      callback(DEFAULT_TELEGRAM);
+export const subscribeToTelegramConfig = (
+  callback: (config: TelegramConfig) => void,
+  onError?: (error: FirestoreError) => void
+) => {
+  return onSnapshot(
+    doc(db, SETTINGS_COLL, SETTINGS_DOC), 
+    (doc) => {
+      if (doc.exists()) {
+        callback({ ...DEFAULT_TELEGRAM, ...doc.data() } as TelegramConfig);
+      } else {
+        callback(DEFAULT_TELEGRAM);
+      }
+    },
+    (error) => {
+      if (onError) onError(error);
+      else console.error("Telegram Config Listener Error:", error);
     }
-  });
+  );
 };
 
 export const saveTelegramConfig = async (config: TelegramConfig): Promise<void> => {
