@@ -1,41 +1,89 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Slot, Customer } from '../types';
-import { X, Search } from 'lucide-react';
+import { X, Search, Check, Calendar, RotateCcw } from 'lucide-react';
 
 interface Props {
   slot: Slot;
   index: number;
   customers: Customer[];
-  onUpdate: (customerId: string | null, name: string) => void;
+  accountExpirationDate: string; // Passed from parent to set default
+  onUpdate: (customerId: string | null, name: string, date: string) => void;
 }
 
-const SlotItem: React.FC<Props> = ({ slot, index, customers, onUpdate }) => {
-  const [isSearching, setIsSearching] = useState(false);
+const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDate, onUpdate }) => {
+  // Modes: 'view', 'searching' (showing input), 'confirming' (showing date picker)
+  const [mode, setMode] = useState<'view' | 'searching' | 'confirming'>('view');
+  
   const [searchTerm, setSearchTerm] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<{id: string | null, name: string} | null>(null);
+  const [expiryDate, setExpiryDate] = useState('');
+  
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Handle outside click to close dropdown
+  // Initialize date only once or when account date changes
+  useEffect(() => {
+    if (mode === 'view' && !slot.isOccupied) {
+        setExpiryDate(accountExpirationDate);
+    }
+  }, [accountExpirationDate, mode, slot.isOccupied]);
+
+  // Handle outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-        setShowDropdown(false);
-        setIsSearching(false);
+        if (mode === 'searching') {
+            setMode('view');
+            setSearchTerm('');
+        }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [mode]);
 
-  const handleSelect = (customer: Customer) => {
-    onUpdate(customer.id, customer.name);
-    setIsSearching(false);
-    setShowDropdown(false);
-    setSearchTerm('');
+  // Helpers
+  const getDaysRemaining = (dateStr: string) => {
+    if (!dateStr) return 999;
+    const target = new Date(dateStr);
+    const now = new Date();
+    const diff = target.getTime() - now.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  const daysLeft = slot.expirationDate ? getDaysRemaining(slot.expirationDate) : 999;
+  
+  let statusColor = 'bg-slate-700'; // Empty
+  if (slot.isOccupied) {
+      if (daysLeft < 0) statusColor = 'bg-red-500';
+      else if (daysLeft <= 3) statusColor = 'bg-yellow-500';
+      else statusColor = 'bg-emerald-500';
+  }
+
+  const handleSelectCustomer = (c: Customer) => {
+    setSelectedCustomer({ id: c.id, name: c.name });
+    setMode('confirming');
+    setExpiryDate(accountExpirationDate); // Default to account expiry
+  };
+
+  const handleConfirm = () => {
+    if (selectedCustomer) {
+        onUpdate(selectedCustomer.id, selectedCustomer.name, expiryDate);
+        setMode('view');
+        setSearchTerm('');
+    }
   };
 
   const handleClear = () => {
-    onUpdate(null, '');
+    if (window.confirm("Remove this customer from the slot?")) {
+        onUpdate(null, '', '');
+    }
+  };
+  
+  const handleQuickRenew = () => {
+     // Just opens the date picker mode for existing user
+     setSelectedCustomer({ id: slot.customerId, name: slot.customerName });
+     setExpiryDate(slot.expirationDate || accountExpirationDate);
+     setMode('confirming');
   };
 
   const filteredCustomers = customers.filter(c => 
@@ -43,74 +91,144 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, onUpdate }) => {
     c.contact.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Determine what name to display
-  // Priority: Linked Customer Name -> Stored Legacy Name -> Empty
+  // Name resolution
   const linkedCustomer = customers.find(c => c.id === slot.customerId);
   const displayName = linkedCustomer ? linkedCustomer.name : slot.customerName;
 
   return (
-    <div ref={wrapperRef} className="relative flex items-center gap-3 bg-slate-950 p-2 rounded-lg border border-slate-800 transition-colors focus-within:border-indigo-500/50">
-      {/* Status Dot */}
-      <div className={`shrink-0 w-2 h-2 rounded-full ${slot.isOccupied ? 'bg-emerald-500' : 'bg-slate-700'}`} />
+    <div ref={wrapperRef} className="relative flex items-center gap-3 bg-slate-950 p-2 rounded-lg border border-slate-800 transition-colors hover:border-slate-700">
       
-      {/* Slot Number */}
-      <span className="shrink-0 text-xs text-slate-500 w-6">#{index + 1}</span>
+      {/* Status Dot */}
+      <div className={`shrink-0 w-2 h-2 rounded-full transition-colors ${statusColor}`} title={slot.isOccupied ? `${daysLeft} days left` : 'Empty'} />
+      
+      {/* Slot Index */}
+      <span className="shrink-0 text-xs text-slate-500 w-5">#{index + 1}</span>
 
-      {/* Main Content Area */}
       <div className="flex-1 relative">
-        {slot.isOccupied && !isSearching ? (
-          <div className="flex items-center justify-between group">
-             <div className="flex items-center gap-2 overflow-hidden">
-               <span className="text-sm text-white truncate">{displayName}</span>
-               {linkedCustomer && linkedCustomer.contact && (
-                   <span className="text-xs text-slate-500 truncate hidden sm:inline-block">
-                       • {linkedCustomer.contact}
-                   </span>
-               )}
-             </div>
-             <button 
-               onClick={handleClear}
-               className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1"
-               title="Clear slot"
-             >
-               <X size={14} />
-             </button>
-          </div>
-        ) : (
-          <div className="relative">
-             <div className="flex items-center">
-                <Search size={14} className="text-slate-500 mr-2 absolute left-0 top-1/2 -translate-y-1/2" />
+        
+        {/* VIEW MODE: OCCUPIED */}
+        {mode === 'view' && slot.isOccupied && (
+           <div className="flex items-center justify-between group">
+              <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-white font-medium truncate">{displayName}</span>
+                    {linkedCustomer?.contact && (
+                        <span className="text-[10px] text-slate-500 hidden sm:inline-block truncate max-w-[100px]">{linkedCustomer.contact}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                     <Calendar size={10} />
+                     <span>{slot.expirationDate || 'No Date'}</span>
+                     {daysLeft < 0 && <span className="text-red-400 font-bold ml-1">(Exp)</span>}
+                  </div>
+              </div>
+              
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                  <button 
+                     onClick={handleQuickRenew}
+                     className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded"
+                     title="Edit Date / Renew"
+                  >
+                      <RotateCcw size={14} />
+                  </button>
+                  <button 
+                     onClick={handleClear}
+                     className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded"
+                     title="Clear Slot"
+                  >
+                      <X size={14} />
+                  </button>
+              </div>
+           </div>
+        )}
+
+        {/* VIEW MODE: EMPTY (Show Search Input) */}
+        {mode === 'view' && !slot.isOccupied && (
+            <div className="relative">
+                <Search size={14} className="text-slate-600 absolute left-0 top-1/2 -translate-y-1/2" />
                 <input 
                     type="text"
-                    className="w-full bg-transparent border-none text-sm text-slate-200 placeholder-slate-600 focus:ring-0 p-0 pl-6 h-6"
-                    placeholder="Search client..."
+                    className="w-full bg-transparent border-none text-sm text-slate-300 placeholder-slate-600 focus:ring-0 p-0 pl-6 h-8 cursor-pointer"
+                    placeholder="Assign Customer..."
+                    onFocus={() => {
+                        setMode('searching');
+                        setSearchTerm('');
+                    }}
+                />
+            </div>
+        )}
+
+        {/* SEARCHING MODE */}
+        {mode === 'searching' && (
+            <div className="relative">
+                <Search size={14} className="text-indigo-500 absolute left-0 top-1/2 -translate-y-1/2" />
+                <input 
+                    type="text"
+                    autoFocus
+                    className="w-full bg-transparent border-none text-sm text-white placeholder-slate-500 focus:ring-0 p-0 pl-6 h-8"
+                    placeholder="Type to search..."
                     value={searchTerm}
-                    onFocus={() => { setIsSearching(true); setShowDropdown(true); }}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
-             </div>
-             
-             {/* Dropdown Results */}
-             {showDropdown && (
-                 <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-                    {filteredCustomers.length > 0 ? (
-                        filteredCustomers.map(c => (
-                            <button
-                                key={c.id}
-                                onClick={() => handleSelect(c)}
-                                className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-indigo-600/20 hover:text-white transition flex items-center justify-between border-b border-slate-800/50 last:border-0"
-                            >
-                                <span className="font-medium truncate">{c.name}</span>
-                                {c.contact && <span className="text-xs text-slate-500 truncate ml-2 opacity-70">{c.contact}</span>}
-                            </button>
-                        ))
-                    ) : (
-                        <div className="px-3 py-3 text-xs text-slate-500 text-center">No clients found</div>
+                
+                {/* Dropdown */}
+                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                    {filteredCustomers.map(c => (
+                        <button
+                            key={c.id}
+                            onMouseDown={() => handleSelectCustomer(c)} // onMouseDown fires before onBlur/clickOutside
+                            className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-indigo-600/20 hover:text-white transition flex items-center justify-between border-b border-slate-800/50 last:border-0"
+                        >
+                            <span className="font-medium truncate">{c.name}</span>
+                            {c.contact && <span className="text-xs text-slate-500 truncate ml-2 opacity-70">{c.contact}</span>}
+                        </button>
+                    ))}
+                    {searchTerm && (
+                         <button
+                            onMouseDown={() => {
+                                setSelectedCustomer({ id: null, name: searchTerm });
+                                setMode('confirming');
+                                setExpiryDate(accountExpirationDate);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-indigo-600/10 font-medium border-t border-slate-700"
+                        >
+                            + Add "{searchTerm}" as guest
+                        </button>
                     )}
-                 </div>
-             )}
-          </div>
+                </div>
+            </div>
         )}
+
+        {/* CONFIRMING MODE (Set Date) */}
+        {mode === 'confirming' && (
+            <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-white truncate max-w-[80px]">
+                    {selectedCustomer?.name}
+                </span>
+                <input 
+                    type="date" 
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 text-xs rounded px-2 py-1 text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark] flex-1 min-w-0"
+                />
+                <button 
+                    onClick={handleConfirm}
+                    className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-500"
+                >
+                    <Check size={14} />
+                </button>
+                <button 
+                    onClick={() => {
+                        setMode('view');
+                        if(!slot.isOccupied) setSearchTerm('');
+                    }}
+                    className="p-1 bg-slate-800 text-slate-400 rounded hover:bg-slate-700"
+                >
+                    <X size={14} />
+                </button>
+            </div>
+        )}
+
       </div>
     </div>
   );
