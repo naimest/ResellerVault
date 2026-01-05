@@ -12,7 +12,8 @@ import {
   Edit2, 
   Trash2, 
   Briefcase,
-  LogOut
+  LogOut,
+  AlertOctagon
 } from 'lucide-react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { auth } from './services/firebase';
@@ -36,6 +37,7 @@ import { Account, AccountType, Customer, TelegramConfig } from './types';
 const App: React.FC = () => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Data State
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -68,9 +70,32 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    const unsubAccounts = subscribeToAccounts((data) => setAccounts(data));
-    const unsubCustomers = subscribeToCustomers((data) => setCustomers(data));
-    const unsubTelegram = subscribeToTelegramConfig((data) => setTelegramConfig(data));
+    const handleDbError = (error: any) => {
+        console.error("Database Error:", error);
+        if (error.code === 'permission-denied') {
+            setDbError("Access Denied: Please update your Firestore Security Rules to 'allow read, write: if request.auth != null;'");
+        } else {
+            setDbError(`Database Connection Error: ${error.message}`);
+        }
+    };
+
+    const unsubAccounts = subscribeToAccounts(
+        (data) => {
+            setAccounts(data);
+            setDbError(null); // Clear error on success
+        },
+        handleDbError
+    );
+
+    const unsubCustomers = subscribeToCustomers(
+        (data) => setCustomers(data), 
+        (err) => console.log("Customer sub error (handled by main)") // Optional: Suppress duplicate alerts
+    );
+    
+    const unsubTelegram = subscribeToTelegramConfig(
+        (data) => setTelegramConfig(data),
+        (err) => console.log("Telegram sub error (handled by main)")
+    );
 
     return () => {
       unsubAccounts();
@@ -93,19 +118,13 @@ const App: React.FC = () => {
     console.log(`Telegram Auto-Check configured. Running every ${ms}ms`);
 
     timerRef.current = setInterval(() => {
-        // We pass the latest accounts directly to the alert service or let it fetch fresh
-        // Since service imports from dataService, we need to ensure it gets fresh data.
-        // The original service uses getAccounts() which was sync.
-        // We will update the telegramService to accept accounts or fetch fresh ones async.
-        // For now, simpler to pass current accounts here? 
-        // Actually, the service needs to be updated. See services/telegramService.ts changes.
         sendExpirationAlert(accounts, telegramConfig); 
     }, ms);
 
     return () => {
         if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [telegramConfig, accounts]); // Re-run if config or accounts change to ensure closure has latest data
+  }, [telegramConfig, accounts]);
 
   // --- Handlers ---
 
@@ -117,9 +136,13 @@ const App: React.FC = () => {
           await saveAccount(data);
       }
       setEditingAccount(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving account:", error);
-      alert("Failed to save account.");
+      if (error.code === 'permission-denied') {
+        alert("Cannot Save: Permission Denied. Check Firestore Rules.");
+      } else {
+        alert("Failed to save account: " + error.message);
+      }
     }
   };
 
@@ -127,8 +150,9 @@ const App: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this account?')) {
       try {
         await deleteAccount(id);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error deleting account:", error);
+        alert("Failed to delete: " + error.message);
       }
     }
   };
@@ -248,6 +272,17 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 md:ml-64 p-4 md:p-8 pt-20 md:pt-8 pb-24 md:pb-8 overflow-y-auto min-h-screen">
         
+        {/* Database Error Banner */}
+        {dbError && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/40 rounded-xl flex items-start gap-3">
+             <AlertOctagon className="text-red-500 shrink-0 mt-0.5" size={24} />
+             <div className="flex-1">
+               <h3 className="text-red-400 font-bold">Database Access Error</h3>
+               <p className="text-red-300/80 text-sm mt-1">{dbError}</p>
+             </div>
+          </div>
+        )}
+
         {currentView === 'customers' ? (
             <CustomerManager />
         ) : (
@@ -396,8 +431,12 @@ const App: React.FC = () => {
                   
                   {filteredAccounts.length === 0 && (
                      <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                       <Search size={48} className="mb-4 opacity-50" />
-                       <p>No accounts found.</p>
+                       {dbError ? (
+                           <AlertOctagon size={48} className="mb-4 text-red-500/50" />
+                       ) : (
+                           <Search size={48} className="mb-4 opacity-50" />
+                       )}
+                       <p>{dbError ? "Fix Database Permissions to see accounts" : "No accounts found."}</p>
                      </div>
                   )}
                 </div>
