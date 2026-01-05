@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Customer } from '../types';
-import { getCustomers, saveCustomer, deleteCustomer } from '../services/dataService';
+import { subscribeToCustomers, saveCustomer, deleteCustomer } from '../services/dataService';
 import { Trash2, UserPlus, Phone, User, Search } from 'lucide-react';
 
 const CustomerManager: React.FC = () => {
@@ -9,27 +9,33 @@ const CustomerManager: React.FC = () => {
   const [newContact, setNewContact] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Subscribe to real-time updates
   useEffect(() => {
-    loadCustomers();
+    const unsubscribe = subscribeToCustomers((data) => {
+        setCustomers(data);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadCustomers = () => {
-    setCustomers(getCustomers());
-  };
-
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName) return;
-    saveCustomer({ name: newName, contact: newContact });
-    setNewName('');
-    setNewContact('');
-    loadCustomers();
+    try {
+        await saveCustomer({ name: newName, contact: newContact });
+        setNewName('');
+        setNewContact('');
+    } catch (err) {
+        console.error("Failed to add customer", err);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Delete this customer? This will NOT remove them from active slots, but they will disappear from future lists.')) {
-      deleteCustomer(id);
-      loadCustomers();
+      try {
+        await deleteCustomer(id);
+      } catch (err) {
+        console.error("Failed to delete customer", err);
+      }
     }
   };
 

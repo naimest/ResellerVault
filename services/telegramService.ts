@@ -1,5 +1,4 @@
-import { getAccounts, getTelegramConfig } from './dataService';
-import { Account } from '../types';
+import { Account, TelegramConfig } from '../types';
 
 // Helper to check days remaining
 const getDaysRemaining = (dateStr: string): number => {
@@ -9,14 +8,13 @@ const getDaysRemaining = (dateStr: string): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-export const sendExpirationAlert = async (): Promise<{ success: boolean; message: string }> => {
-  const { botToken, chatId } = getTelegramConfig();
+export const sendExpirationAlert = async (accounts: Account[], config: TelegramConfig): Promise<{ success: boolean; message: string }> => {
+  const { botToken, chatId } = config;
 
   if (!botToken || !chatId) {
     return { success: false, message: 'Telegram Bot Token or Chat ID not configured.' };
   }
 
-  const accounts = getAccounts();
   const expiringAccounts: Account[] = accounts.filter(acc => {
     const days = getDaysRemaining(acc.expirationDate);
     // Alert if expiring within 3 days

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Bell, Clock } from 'lucide-react';
-import { getTelegramConfig, saveTelegramConfig } from '../services/dataService';
+import { subscribeToTelegramConfig, saveTelegramConfig } from '../services/dataService';
 import { sendExpirationAlert } from '../services/telegramService';
 import { TelegramConfig } from '../types';
 
@@ -22,19 +22,22 @@ const TelegramSettings: React.FC<Props> = ({ isOpen, onClose, onConfigSave }) =>
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
+  // Subscribe to settings when modal opens
   useEffect(() => {
     if (isOpen) {
-      const config = getTelegramConfig();
-      setBotToken(config.botToken);
-      setChatId(config.chatId);
-      setIntervalValue(config.intervalValue);
-      setIntervalUnit(config.intervalUnit);
-      setEnabled(config.enabled);
+      const unsubscribe = subscribeToTelegramConfig((config) => {
+          setBotToken(config.botToken);
+          setChatId(config.chatId);
+          setIntervalValue(config.intervalValue);
+          setIntervalUnit(config.intervalUnit);
+          setEnabled(config.enabled);
+      });
       setStatusMsg('');
+      return () => unsubscribe();
     }
   }, [isOpen]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const config: TelegramConfig = {
         botToken,
         chatId,
@@ -42,25 +45,49 @@ const TelegramSettings: React.FC<Props> = ({ isOpen, onClose, onConfigSave }) =>
         intervalUnit,
         enabled
     };
-    saveTelegramConfig(config);
-    onConfigSave(); // Trigger restart of timer in App.tsx
-    setStatusMsg('Settings saved. Timer updated.');
-    setTimeout(() => onClose(), 1500);
+    try {
+        await saveTelegramConfig(config);
+        onConfigSave(); // Logic handles in App.tsx via live subscription, but we call for safety
+        setStatusMsg('Settings saved successfully.');
+        setTimeout(() => onClose(), 1500);
+    } catch (e) {
+        setStatusMsg('Error saving settings.');
+    }
   };
 
   const handleTest = async () => {
-    // Save temporarily for test
-    const config: TelegramConfig = { botToken, chatId, intervalValue, intervalUnit, enabled };
-    saveTelegramConfig(config);
+    // Note: We need to pass the config explicitly here because the service 
+    // now requires arguments if we want to test "unsaved" config, 
+    // OR we just test what's saved. 
+    // To keep it simple, we warn users to save first, or we pass this config.
+    // The previous implementation of sendExpirationAlert read from storage.
+    // The new one reads from arguments.
     
     setLoading(true);
     setStatusMsg('Sending test report...');
     
+    // We cannot easily fetch 'accounts' here without props.
+    // For the test button, let's just test the connection validity message?
+    // Or we modify the service to accept null accounts and just send a "Test Connected" msg.
+    // To stick to the existing logic, we will trigger it with null accounts which returns "No accounts"
+    // OR we simply display a message "Save settings to test automatically".
+    
+    // Better: We send a generic test message.
     try {
-        const result = await sendExpirationAlert();
-        setStatusMsg(result.message);
-    } catch (e) {
-        setStatusMsg('Error sending alert');
+        const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: "✅ <b>Test Message</b>\n\nResellerVault is connected successfully.",
+            parse_mode: 'HTML',
+          }),
+        });
+        const data = await response.json();
+        if (data.ok) setStatusMsg('Test successful! Check your Telegram.');
+        else throw new Error(data.description);
+    } catch (e: any) {
+        setStatusMsg('Error: ' + e.message);
     } finally {
         setLoading(false);
     }

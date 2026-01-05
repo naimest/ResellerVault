@@ -371,4 +371,92 @@ const App: React.FC = () => {
                                 </button>
                                 <button 
                                   onClick={() => handleDelete(account.id)}
-                                  className="text-slate-500 hover:text-red-400 bg-slate-
+                                  className="text-slate-500 hover:text-red-400 bg-slate-800 p-1.5 rounded-md transition"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            {account.slots.map((slot, idx) => (
+                              <SlotItem 
+                                key={slot.id}
+                                index={idx}
+                                slot={slot}
+                                customers={customers}
+                                onUpdate={(customerId, name) => handleSlotUpdate(account.id, slot.id, customerId, name)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                     );
+                  })}
+                  
+                  {filteredAccounts.length === 0 && (
+                     <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">
+                       <Search size={48} className="mb-4 opacity-50" />
+                       <p>No accounts found.</p>
+                     </div>
+                  )}
+                </div>
+            </>
+        )}
+
+      </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex justify-around items-center h-16">
+          <button 
+            onClick={() => setCurrentView('dashboard')}
+            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${currentView === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}
+          >
+            <LayoutDashboard size={20} />
+            <span className="text-[10px] font-medium">Dashboard</span>
+          </button>
+          
+          <button 
+            onClick={() => setCurrentView('customers')}
+            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${currentView === 'customers' ? 'text-indigo-400' : 'text-slate-500'}`}
+          >
+            <Users size={20} />
+            <span className="text-[10px] font-medium">Customers</span>
+          </button>
+
+          <button 
+            onClick={() => setIsTelegramModalOpen(true)}
+            className="flex flex-col items-center justify-center w-full h-full space-y-1 text-slate-500"
+          >
+            <Settings size={20} />
+            <span className="text-[10px] font-medium">Settings</span>
+          </button>
+          
+          <button 
+             onClick={() => auth.signOut()}
+             className="flex flex-col items-center justify-center w-full h-full space-y-1 text-red-500/70"
+          >
+            <LogOut size={20} />
+            <span className="text-[10px] font-medium">Exit</span>
+          </button>
+        </div>
+      </nav>
+
+      <AccountModal 
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
+        onSave={handleSaveAccount}
+        initialData={editingAccount}
+      />
+
+      <TelegramSettings
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        onConfigSave={() => { /* No-op: handled by useEffect listening to live data */ }}
+      />
+    </div>
+  );
+};
+
+export default App;
