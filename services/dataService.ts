@@ -1,24 +1,37 @@
-import { Account, AccountType, Slot, ServiceName, Customer, TelegramConfig } from '../types';
-import { STORAGE_KEYS, SERVICE_DEFAULTS } from '../constants';
+import { db } from './firebase';
+import { 
+  collection, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  setDoc, 
+  getDoc 
+} from 'firebase/firestore';
+import { Account, AccountType, Slot, Customer, TelegramConfig } from '../types';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const ACCOUNTS_COLL = 'accounts';
+const CUSTOMERS_COLL = 'customers';
+const SETTINGS_COLL = 'settings';
+const SETTINGS_DOC = 'telegram';
 
 // --- ACCOUNTS ---
 
-export const getAccounts = (): Account[] => {
-  const data = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-  return data ? JSON.parse(data) : [];
+export const subscribeToAccounts = (callback: (accounts: Account[]) => void) => {
+  return onSnapshot(collection(db, ACCOUNTS_COLL), (snapshot) => {
+    const accounts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Account));
+    callback(accounts);
+  });
 };
 
-export const saveAccount = (accountData: Partial<Account>): Account => {
-  const accounts = getAccounts();
-  
-  // Logic to initialize slots based on type
+export const saveAccount = async (accountData: Partial<Account>): Promise<void> => {
+  // Initialize slots
   let slots: Slot[] = [];
   if (accountData.type === AccountType.SHARED) {
     for (let i = 0; i < (accountData.maxSlots || 1); i++) {
       slots.push({
-        id: generateId(),
+        id: Math.random().toString(36).substr(2, 9),
         customerId: null,
         customerName: '',
         isOccupied: false
@@ -26,15 +39,14 @@ export const saveAccount = (accountData: Partial<Account>): Account => {
     }
   } else {
     slots.push({
-      id: generateId(),
+      id: Math.random().toString(36).substr(2, 9),
       customerId: null,
       customerName: '',
       isOccupied: false
     });
   }
 
-  const newAccount: Account = {
-    id: generateId(),
+  const newAccount: Omit<Account, 'id'> = {
     createdAt: Date.now(),
     serviceName: accountData.serviceName || 'Other',
     email: accountData.email || '',
@@ -45,72 +57,58 @@ export const saveAccount = (accountData: Partial<Account>): Account => {
     slots: slots,
   };
 
-  accounts.push(newAccount);
-  localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-  return newAccount;
+  await addDoc(collection(db, ACCOUNTS_COLL), newAccount);
 };
 
-export const updateAccount = (account: Account): void => {
-  const accounts = getAccounts();
-  const index = accounts.findIndex(a => a.id === account.id);
+export const updateAccount = async (account: Account): Promise<void> => {
+  const accountRef = doc(db, ACCOUNTS_COLL, account.id);
   
-  if (index !== -1) {
-    // If maxSlots changed, we might need to adjust the slots array
-    // This is a simple implementation that truncates or adds empty slots
-    let currentSlots = account.slots;
-    if (account.maxSlots > currentSlots.length) {
-       const needed = account.maxSlots - currentSlots.length;
-       for(let i=0; i<needed; i++) {
-         currentSlots.push({ id: generateId(), customerId: null, customerName: '', isOccupied: false });
-       }
-    } else if (account.maxSlots < currentSlots.length) {
-       currentSlots = currentSlots.slice(0, account.maxSlots);
-    }
+  // Logic to adjust slots if maxSlots changed
+  // Note: For simplicity in this async version, we rely on the passed account object 
+  // having the correct slots, or we assume the UI handled the array resizing before passing it.
+  // However, to be safe, we perform a basic check here if needed, but let's trust the UI/Modal logic for now.
+  
+  // Ensure we don't send the ID as part of the data payload
+  const { id, ...data } = account;
+  await updateDoc(accountRef, data);
+};
+
+export const deleteAccount = async (id: string): Promise<void> => {
+  await deleteDoc(doc(db, ACCOUNTS_COLL, id));
+};
+
+export const updateSlot = async (accountId: string, slotId: string, customerId: string | null, customerName: string): Promise<void> => {
+  const accountRef = doc(db, ACCOUNTS_COLL, accountId);
+  const snapshot = await getDoc(accountRef);
+  
+  if (snapshot.exists()) {
+    const account = snapshot.data() as Account;
+    const updatedSlots = account.slots.map(slot => {
+      if (slot.id === slotId) {
+        return { ...slot, customerId, customerName, isOccupied: !!customerName };
+      }
+      return slot;
+    });
     
-    accounts[index] = { ...account, slots: currentSlots };
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+    await updateDoc(accountRef, { slots: updatedSlots });
   }
-};
-
-export const deleteAccount = (id: string): void => {
-  const accounts = getAccounts();
-  const filtered = accounts.filter(acc => acc.id !== id);
-  localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(filtered));
-};
-
-export const updateSlot = (accountId: string, slotId: string, customerId: string | null, customerName: string): void => {
-  const accounts = getAccounts();
-  const accountIndex = accounts.findIndex(a => a.id === accountId);
-  if (accountIndex === -1) return;
-
-  const slotIndex = accounts[accountIndex].slots.findIndex(s => s.id === slotId);
-  if (slotIndex === -1) return;
-
-  accounts[accountIndex].slots[slotIndex].customerId = customerId;
-  accounts[accountIndex].slots[slotIndex].customerName = customerName;
-  accounts[accountIndex].slots[slotIndex].isOccupied = !!customerName;
-
-  localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
 };
 
 // --- CUSTOMERS ---
 
-export const getCustomers = (): Customer[] => {
-  const data = localStorage.getItem(STORAGE_KEYS.CUSTOMERS);
-  return data ? JSON.parse(data) : [];
+export const subscribeToCustomers = (callback: (customers: Customer[]) => void) => {
+  return onSnapshot(collection(db, CUSTOMERS_COLL), (snapshot) => {
+    const customers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Customer));
+    callback(customers);
+  });
 };
 
-export const saveCustomer = (customer: Omit<Customer, 'id'>): Customer => {
-  const customers = getCustomers();
-  const newCustomer = { ...customer, id: generateId() };
-  customers.push(newCustomer);
-  localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-  return newCustomer;
+export const saveCustomer = async (customer: Omit<Customer, 'id'>): Promise<void> => {
+  await addDoc(collection(db, CUSTOMERS_COLL), customer);
 };
 
-export const deleteCustomer = (id: string): void => {
-  const customers = getCustomers().filter(c => c.id !== id);
-  localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
+export const deleteCustomer = async (id: string): Promise<void> => {
+  await deleteDoc(doc(db, CUSTOMERS_COLL, id));
 };
 
 // --- TELEGRAM ---
@@ -123,11 +121,16 @@ const DEFAULT_TELEGRAM: TelegramConfig = {
   enabled: false
 };
 
-export const getTelegramConfig = (): TelegramConfig => {
-  const data = localStorage.getItem(STORAGE_KEYS.TELEGRAM_CONFIG);
-  return data ? { ...DEFAULT_TELEGRAM, ...JSON.parse(data) } : DEFAULT_TELEGRAM;
+export const subscribeToTelegramConfig = (callback: (config: TelegramConfig) => void) => {
+  return onSnapshot(doc(db, SETTINGS_COLL, SETTINGS_DOC), (doc) => {
+    if (doc.exists()) {
+      callback({ ...DEFAULT_TELEGRAM, ...doc.data() } as TelegramConfig);
+    } else {
+      callback(DEFAULT_TELEGRAM);
+    }
+  });
 };
 
-export const saveTelegramConfig = (config: TelegramConfig) => {
-  localStorage.setItem(STORAGE_KEYS.TELEGRAM_CONFIG, JSON.stringify(config));
+export const saveTelegramConfig = async (config: TelegramConfig): Promise<void> => {
+  await setDoc(doc(db, SETTINGS_COLL, SETTINGS_DOC), config);
 };

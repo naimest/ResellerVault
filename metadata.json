@@ -1,4 +1,5 @@
 {
-  "name": "ResellerVault",
-  "description": "A premium dark-mode dashboard for managing digital subscription inventories, tracking expirations, and managing shared/private account slots with Telegram integration."
+  "name": "Copy of ResellerVault",
+  "description": "A premium dark-mode dashboard for managing digital subscription inventories, tracking expirations, and managing shared/private account slots with Telegram integration.",
+  "requestFramePermissions": []
 }

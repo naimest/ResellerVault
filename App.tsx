@@ -5,26 +5,44 @@ import {
   Search, 
   Users, 
   Settings, 
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  CreditCard,
-  Edit2,
-  Trash2,
-  Briefcase
+  AlertTriangle, 
+  CheckCircle, 
+  XCircle, 
+  CreditCard, 
+  Edit2, 
+  Trash2, 
+  Briefcase,
+  LogOut
 } from 'lucide-react';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { auth } from './services/firebase';
+import Login from './components/Login';
 import AccountModal from './components/AddAccountModal';
 import TelegramSettings from './components/TelegramSettings';
 import CustomerManager from './components/CustomerManager';
 import SlotItem from './components/SlotItem';
-import { getAccounts, saveAccount, deleteAccount, updateSlot, getTelegramConfig, updateAccount, getCustomers } from './services/dataService';
+import { 
+  subscribeToAccounts, 
+  subscribeToCustomers, 
+  subscribeToTelegramConfig, 
+  saveAccount, 
+  deleteAccount, 
+  updateSlot, 
+  updateAccount 
+} from './services/dataService';
 import { sendExpirationAlert } from './services/telegramService';
-import { Account, AccountType, ServiceName, Customer } from './types';
+import { Account, AccountType, Customer, TelegramConfig } from './types';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'customers'>('dashboard');
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+
+  // Data State
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
+
+  const [currentView, setCurrentView] = useState<'dashboard' | 'customers'>('dashboard');
   
   // Modals
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -37,58 +55,81 @@ const App: React.FC = () => {
   // Telegram Timer Ref
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initial Load
+  // Auth Listener
   useEffect(() => {
-    loadData();
-    setupTelegramTimer();
-    return () => stopTelegramTimer();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoadingAuth(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadData = () => {
-    setAccounts(getAccounts());
-    setCustomers(getCustomers());
-  };
+  // Data Subscriptions (Only if logged in)
+  useEffect(() => {
+    if (!user) return;
 
-  // --- Telegram Timer Logic ---
-  const stopTelegramTimer = () => {
+    const unsubAccounts = subscribeToAccounts((data) => setAccounts(data));
+    const unsubCustomers = subscribeToCustomers((data) => setCustomers(data));
+    const unsubTelegram = subscribeToTelegramConfig((data) => setTelegramConfig(data));
+
+    return () => {
+      unsubAccounts();
+      unsubCustomers();
+      unsubTelegram();
+    };
+  }, [user]);
+
+  // Handle Telegram Timer based on live config
+  useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-  };
-
-  const setupTelegramTimer = () => {
-    stopTelegramTimer();
-    const config = getTelegramConfig();
     
-    if (!config.enabled || !config.intervalValue) return;
+    if (!telegramConfig || !telegramConfig.enabled || !telegramConfig.intervalValue) return;
 
     let ms = 0;
-    if (config.intervalUnit === 'minutes') ms = config.intervalValue * 60 * 1000;
-    else if (config.intervalUnit === 'hours') ms = config.intervalValue * 60 * 60 * 1000;
-    else if (config.intervalUnit === 'days') ms = config.intervalValue * 24 * 60 * 60 * 1000;
+    if (telegramConfig.intervalUnit === 'minutes') ms = telegramConfig.intervalValue * 60 * 1000;
+    else if (telegramConfig.intervalUnit === 'hours') ms = telegramConfig.intervalValue * 60 * 60 * 1000;
+    else if (telegramConfig.intervalUnit === 'days') ms = telegramConfig.intervalValue * 24 * 60 * 60 * 1000;
 
-    console.log(`Telegram Auto-Check started. Running every ${ms}ms`);
+    console.log(`Telegram Auto-Check configured. Running every ${ms}ms`);
 
     timerRef.current = setInterval(() => {
-        console.log('Running Auto-Check...');
-        sendExpirationAlert();
+        // We pass the latest accounts directly to the alert service or let it fetch fresh
+        // Since service imports from dataService, we need to ensure it gets fresh data.
+        // The original service uses getAccounts() which was sync.
+        // We will update the telegramService to accept accounts or fetch fresh ones async.
+        // For now, simpler to pass current accounts here? 
+        // Actually, the service needs to be updated. See services/telegramService.ts changes.
+        sendExpirationAlert(accounts, telegramConfig); 
     }, ms);
-  };
+
+    return () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [telegramConfig, accounts]); // Re-run if config or accounts change to ensure closure has latest data
 
   // --- Handlers ---
 
-  const handleSaveAccount = (data: any) => {
-    if (data.id) {
-        updateAccount(data);
-    } else {
-        saveAccount(data);
+  const handleSaveAccount = async (data: any) => {
+    try {
+      if (data.id) {
+          await updateAccount(data);
+      } else {
+          await saveAccount(data);
+      }
+      setEditingAccount(null);
+    } catch (error) {
+      console.error("Error saving account:", error);
+      alert("Failed to save account.");
     }
-    loadData();
-    setEditingAccount(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this account?')) {
-      deleteAccount(id);
-      loadData();
+      try {
+        await deleteAccount(id);
+      } catch (error) {
+        console.error("Error deleting account:", error);
+      }
     }
   };
 
@@ -97,9 +138,12 @@ const App: React.FC = () => {
     setIsAccountModalOpen(true);
   };
 
-  const handleSlotUpdate = (accId: string, slotId: string, customerId: string | null, name: string) => {
-    updateSlot(accId, slotId, customerId, name);
-    loadData();
+  const handleSlotUpdate = async (accId: string, slotId: string, customerId: string | null, name: string) => {
+    try {
+      await updateSlot(accId, slotId, customerId, name);
+    } catch (error) {
+      console.error("Error updating slot:", error);
+    }
   };
 
   // --- Helpers ---
@@ -135,6 +179,9 @@ const App: React.FC = () => {
   const filteredAccounts = filterService === 'All' 
     ? accounts 
     : accounts.filter(a => a.serviceName === filterService);
+
+  if (loadingAuth) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500">Loading...</div>;
+  if (!user) return <Login />;
 
   return (
     <div className="min-h-screen bg-slate-950 flex text-slate-200 font-sans">
@@ -189,6 +236,13 @@ const App: React.FC = () => {
             Alert Settings
           </button>
         </nav>
+
+        <div className="p-4 border-t border-slate-800">
+           <button onClick={() => auth.signOut()} className="flex items-center gap-3 w-full px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg transition">
+              <LogOut size={18} />
+              Sign Out
+           </button>
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -317,84 +371,4 @@ const App: React.FC = () => {
                                 </button>
                                 <button 
                                   onClick={() => handleDelete(account.id)}
-                                  className="text-slate-500 hover:text-red-400 bg-slate-800 p-1.5 rounded-md transition"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            {account.slots.map((slot, idx) => (
-                              <SlotItem 
-                                key={slot.id}
-                                index={idx}
-                                slot={slot}
-                                customers={customers}
-                                onUpdate={(customerId, name) => handleSlotUpdate(account.id, slot.id, customerId, name)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                     );
-                  })}
-                  
-                  {filteredAccounts.length === 0 && (
-                     <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl">
-                       <Search size={48} className="mb-4 opacity-50" />
-                       <p>No accounts found.</p>
-                     </div>
-                  )}
-                </div>
-            </>
-        )}
-
-      </main>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 z-30 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex justify-around items-center h-16">
-          <button 
-            onClick={() => setCurrentView('dashboard')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${currentView === 'dashboard' ? 'text-indigo-400' : 'text-slate-500'}`}
-          >
-            <LayoutDashboard size={20} />
-            <span className="text-[10px] font-medium">Dashboard</span>
-          </button>
-          
-          <button 
-            onClick={() => setCurrentView('customers')}
-            className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${currentView === 'customers' ? 'text-indigo-400' : 'text-slate-500'}`}
-          >
-            <Users size={20} />
-            <span className="text-[10px] font-medium">Customers</span>
-          </button>
-
-          <button 
-            onClick={() => setIsTelegramModalOpen(true)}
-            className="flex flex-col items-center justify-center w-full h-full space-y-1 text-slate-500"
-          >
-            <Settings size={20} />
-            <span className="text-[10px] font-medium">Settings</span>
-          </button>
-        </div>
-      </nav>
-
-      <AccountModal 
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
-        onSave={handleSaveAccount}
-        initialData={editingAccount}
-      />
-
-      <TelegramSettings
-        isOpen={isTelegramModalOpen}
-        onClose={() => setIsTelegramModalOpen(false)}
-        onConfigSave={() => setupTelegramTimer()}
-      />
-    </div>
-  );
-};
-
-export default App;
+                                  className="text-slate-500 hover:text-red-400 bg-slate-
