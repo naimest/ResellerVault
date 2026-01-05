@@ -162,9 +162,9 @@ const App: React.FC = () => {
     setIsAccountModalOpen(true);
   };
 
-  const handleSlotUpdate = async (accId: string, slotId: string, customerId: string | null, name: string, date: string) => {
+  const handleSlotUpdate = async (accId: string, slotId: string, customerId: string | null, name: string, date: string, profileName: string) => {
     try {
-      await updateSlot(accId, slotId, customerId, name, date);
+      await updateSlot(accId, slotId, customerId, name, date, profileName);
     } catch (error) {
       console.error("Error updating slot:", error);
     }
@@ -421,7 +421,7 @@ const App: React.FC = () => {
                                 slot={slot}
                                 customers={customers}
                                 accountExpirationDate={account.expirationDate}
-                                onUpdate={(customerId, name, date) => handleSlotUpdate(account.id, slot.id, customerId, name, date)}
+                                onUpdate={(customerId, name, date, profileName) => handleSlotUpdate(account.id, slot.id, customerId, name, date, profileName)}
                               />
                             ))}
                           </div>
