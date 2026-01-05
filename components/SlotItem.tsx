@@ -1,22 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Slot, Customer } from '../types';
-import { X, Search, Check, Calendar, RotateCcw } from 'lucide-react';
+import { X, Search, Check, Calendar, RotateCcw, UserCircle } from 'lucide-react';
 
 interface Props {
   slot: Slot;
   index: number;
   customers: Customer[];
   accountExpirationDate: string; // Passed from parent to set default
-  onUpdate: (customerId: string | null, name: string, date: string) => void;
+  onUpdate: (customerId: string | null, name: string, date: string, profileName: string) => void;
 }
 
 const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDate, onUpdate }) => {
-  // Modes: 'view', 'searching' (showing input), 'confirming' (showing date picker)
+  // Modes: 'view', 'searching' (showing input), 'confirming' (showing date/profile picker)
   const [mode, setMode] = useState<'view' | 'searching' | 'confirming'>('view');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<{id: string | null, name: string} | null>(null);
   const [expiryDate, setExpiryDate] = useState('');
+  const [profileNameInput, setProfileNameInput] = useState('');
   
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -24,6 +25,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
   useEffect(() => {
     if (mode === 'view' && !slot.isOccupied) {
         setExpiryDate(accountExpirationDate);
+        setProfileNameInput('');
     }
   }, [accountExpirationDate, mode, slot.isOccupied]);
 
@@ -63,11 +65,12 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
     setSelectedCustomer({ id: c.id, name: c.name });
     setMode('confirming');
     setExpiryDate(accountExpirationDate); // Default to account expiry
+    setProfileNameInput(''); // Reset profile name on new selection
   };
 
   const handleConfirm = () => {
     if (selectedCustomer) {
-        onUpdate(selectedCustomer.id, selectedCustomer.name, expiryDate);
+        onUpdate(selectedCustomer.id, selectedCustomer.name, expiryDate, profileNameInput);
         setMode('view');
         setSearchTerm('');
     }
@@ -75,7 +78,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
 
   const handleClear = () => {
     if (window.confirm("Remove this customer from the slot?")) {
-        onUpdate(null, '', '');
+        onUpdate(null, '', '', '');
     }
   };
   
@@ -83,6 +86,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
      // Just opens the date picker mode for existing user
      setSelectedCustomer({ id: slot.customerId, name: slot.customerName });
      setExpiryDate(slot.expirationDate || accountExpirationDate);
+     setProfileNameInput(slot.profileName || '');
      setMode('confirming');
   };
 
@@ -116,10 +120,23 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
                         <span className="text-[10px] text-slate-500 hidden sm:inline-block truncate max-w-[100px]">{linkedCustomer.contact}</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1 text-[10px] text-slate-400">
-                     <Calendar size={10} />
-                     <span>{slot.expirationDate || 'No Date'}</span>
-                     {daysLeft < 0 && <span className="text-red-400 font-bold ml-1">(Exp)</span>}
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                     
+                     {/* Expiry Date */}
+                     <div className="flex items-center gap-1">
+                        <Calendar size={10} />
+                        <span>{slot.expirationDate || 'No Date'}</span>
+                        {daysLeft < 0 && <span className="text-red-400 font-bold ml-1">(Exp)</span>}
+                     </div>
+
+                     {/* Profile Name Badge */}
+                     {slot.profileName && (
+                        <div className="flex items-center gap-1 bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300 border border-slate-700">
+                            <UserCircle size={10} />
+                            <span className="max-w-[80px] truncate">{slot.profileName}</span>
+                        </div>
+                     )}
+
                   </div>
               </div>
               
@@ -127,7 +144,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
                   <button 
                      onClick={handleQuickRenew}
                      className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-400/10 rounded"
-                     title="Edit Date / Renew"
+                     title="Edit Details / Renew"
                   >
                       <RotateCcw size={14} />
                   </button>
@@ -189,6 +206,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
                                 setSelectedCustomer({ id: null, name: searchTerm });
                                 setMode('confirming');
                                 setExpiryDate(accountExpirationDate);
+                                setProfileNameInput('');
                             }}
                             className="w-full text-left px-3 py-2 text-sm text-indigo-400 hover:bg-indigo-600/10 font-medium border-t border-slate-700"
                         >
@@ -199,21 +217,33 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
             </div>
         )}
 
-        {/* CONFIRMING MODE (Set Date) */}
+        {/* CONFIRMING MODE (Set Details) */}
         {mode === 'confirming' && (
-            <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-white truncate max-w-[80px]">
+            <div className="flex items-center gap-2 w-full">
+                <span className="text-sm font-medium text-white truncate max-w-[80px] shrink-0" title={selectedCustomer?.name}>
                     {selectedCustomer?.name}
                 </span>
+                
+                {/* Profile Name Input */}
+                <input 
+                    type="text" 
+                    value={profileNameInput}
+                    onChange={(e) => setProfileNameInput(e.target.value)}
+                    placeholder="Profile"
+                    className="bg-slate-900 border border-slate-700 text-xs rounded px-2 py-1 text-white focus:outline-none focus:border-indigo-500 w-20 shrink-1 min-w-0 placeholder-slate-600"
+                />
+
+                {/* Date Input */}
                 <input 
                     type="date" 
                     value={expiryDate}
                     onChange={(e) => setExpiryDate(e.target.value)}
                     className="bg-slate-900 border border-slate-700 text-xs rounded px-2 py-1 text-white focus:outline-none focus:border-indigo-500 [color-scheme:dark] flex-1 min-w-0"
                 />
+
                 <button 
                     onClick={handleConfirm}
-                    className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-500"
+                    className="p-1 bg-indigo-600 text-white rounded hover:bg-indigo-500 shrink-0"
                 >
                     <Check size={14} />
                 </button>
@@ -222,7 +252,7 @@ const SlotItem: React.FC<Props> = ({ slot, index, customers, accountExpirationDa
                         setMode('view');
                         if(!slot.isOccupied) setSearchTerm('');
                     }}
-                    className="p-1 bg-slate-800 text-slate-400 rounded hover:bg-slate-700"
+                    className="p-1 bg-slate-800 text-slate-400 rounded hover:bg-slate-700 shrink-0"
                 >
                     <X size={14} />
                 </button>
