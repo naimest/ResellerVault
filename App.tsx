@@ -32,6 +32,7 @@ import {
   updateAccount 
 } from './services/dataService';
 import { sendExpirationAlert } from './services/telegramService';
+import { createTimerWorker } from './services/workerFactory';
 import { Account, AccountType, Customer, TelegramConfig } from './types';
 
 const App: React.FC = () => {
@@ -54,8 +55,14 @@ const App: React.FC = () => {
   // Filters
   const [filterService, setFilterService] = useState<string>('All');
   
-  // Telegram Timer Ref
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Background Worker Refs
+  const workerRef = useRef<Worker | null>(null);
+  const latestDataRef = useRef<{accounts: Account[], config: TelegramConfig | null}>({ accounts: [], config: null });
+
+  // Update ref whenever data changes so the worker callback has access to fresh data
+  useEffect(() => {
+    latestDataRef.current = { accounts, config: telegramConfig };
+  }, [accounts, telegramConfig]);
 
   // Auth Listener
   useEffect(() => {
@@ -104,27 +111,48 @@ const App: React.FC = () => {
     };
   }, [user]);
 
-  // Handle Telegram Timer based on live config
+  // Initialize Web Worker for Background Processing
   useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    // Create worker on mount
+    workerRef.current = createTimerWorker();
+
+    // Handle messages (ticks) from worker
+    workerRef.current.onmessage = (e) => {
+        if (e.data === 'TICK') {
+            const { accounts, config } = latestDataRef.current;
+            if (config && config.enabled) {
+                console.log("Worker Tick: Sending Alert...");
+                sendExpirationAlert(accounts, config);
+            }
+        }
+    };
+
+    return () => {
+        if (workerRef.current) {
+            workerRef.current.terminate();
+            workerRef.current = null;
+        }
+    };
+  }, []);
+
+  // Configure Worker Interval
+  useEffect(() => {
+    if (!workerRef.current) return;
     
-    if (!telegramConfig || !telegramConfig.enabled || !telegramConfig.intervalValue) return;
+    if (!telegramConfig || !telegramConfig.enabled || !telegramConfig.intervalValue) {
+        workerRef.current.postMessage({ action: 'STOP' });
+        return;
+    }
 
     let ms = 0;
     if (telegramConfig.intervalUnit === 'minutes') ms = telegramConfig.intervalValue * 60 * 1000;
     else if (telegramConfig.intervalUnit === 'hours') ms = telegramConfig.intervalValue * 60 * 60 * 1000;
     else if (telegramConfig.intervalUnit === 'days') ms = telegramConfig.intervalValue * 24 * 60 * 60 * 1000;
 
-    console.log(`Telegram Auto-Check configured. Running every ${ms}ms`);
+    // Send start command to worker (it handles clearing previous interval internally)
+    workerRef.current.postMessage({ action: 'START', interval: ms });
 
-    timerRef.current = setInterval(() => {
-        sendExpirationAlert(accounts, telegramConfig); 
-    }, ms);
-
-    return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [telegramConfig, accounts]);
+  }, [telegramConfig]); // Only re-run when config changes
 
   // --- Handlers ---
 
